@@ -6,36 +6,75 @@
     .module('crowdsource.ranking.controllers')
     .controller('RankingController', RankingController);
 
-  RankingController.$inject = ['$scope', '$log', '$mdToast', '$http', 'RankingService'];
+  RankingController.$inject = ['$scope', '$log', '$mdToast', '$http', 'RankingService', 'Authentication'];
 
-  function RankingController($scope, $log, $mdToast, $http, RankingService) {	
-  	$scope.ranking = [];
-  	$scope.rowCollection=[];
+  function RankingController($scope, $log, $mdToast, $http, RankingService, Authentication) {
+    var self = this;
 
-    RankingService.getRequesterRanking().then(
-      function success (resp) {
-        var data = resp[0];
-      	$scope.ranking = data;
-      	$scope.rowCollection = data;
-      },
-      function error (errResp) {
-        var data = resp[0];
-        $mdToast.showSimple('Could get requester ranking.');
-      });
-    	
-    $scope.gridOptions = {
-      multiSelect: false,
-      enablePinning: true,
-      data:'ranking',
-      columnDefs: [   
-        { field: "requester_name", displayName: 'Requester Name', width:220,pinned: true },
-        { field:"requester_communicationRank",displayName: 'Communicativity', width:140 },
-        { field: "requester_fairRank", displayName:'Fairness', width:100 },
-        { field: "requester_payRank", displayName: 'Generosity', width: 100 },
-        { field: "requester_speedRank", displayName: 'Promptness', width: 150 },
-        { field: "requester_numberofReviews", displayName: 'Total Reviews',  width: 40 }
-      ]
-    };	
+    getWorkerData();
+    getRequesterData();
+
+    function getWorkerData() {
+      self.pendingRankings = [];
+      RankingService.getWorkerRankings().then(
+        function success (resp) {
+          var data = resp[0];
+          data = data.map(function (item) {
+            item.reviewType = 'requester';
+            return item;
+          });
+          self.pendingRankings = data;
+        },
+        function error (errResp) {
+          var data = resp[0];
+          $mdToast.showSimple('Could get worker rankings.');
+        });
+    }
+
+    function getRequesterData() {
+      self.requesterRankings = [];
+      RankingService.getRequesterRankings().then(
+        function success (resp) {
+          var data = resp[0];
+          data = data.map(function (item) {
+            item.reviewType = 'worker';
+            return item;
+          });
+          self.requesterRankings = data;
+        },
+        function error (errResp) {
+          var data = errResp[0];
+          $mdToast.showSimple('Could get requester rankings.');
+        });
+    }
+
+    function refreshData(reviewType) {
+      if (reviewType === 'worker') {
+        getRequesterData();
+      } else {
+        getWorkerData();
+      }
+    }
+
+    self.handleRatingSubmit = function (rating, entry) {
+      entry.current_rating = rating;
+      if (entry.current_rating_id) {
+        RankingService.updateRating(rating, entry).then(function success(resp) {
+        }, function error (resp) {
+          $mdToast.showSimple('Could not update rating.');
+        }).finally(function () {
+          refreshData(entry.reviewType);
+        });
+      } else {
+        RankingService.submitRating(rating, entry).then(function success(resp) {
+        }, function error (resp) {
+          $mdToast.showSimple('Could not submit rating.')
+        }).finally(function () {
+          refreshData(entry.reviewType);
+        });
+      }
+
+    }
 
   }
 
